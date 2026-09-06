@@ -1,0 +1,6 @@
+{
+  "name": "Eclipse Cloud",
+  "description": "Enterprise-grade, ultra low-latency Minecraft server hosting storefront, Discord-based order system, user dashboard, and admin CMS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

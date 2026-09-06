@@ -1,0 +1,157 @@
+{
+  "entities": {
+    "WebsiteSettings": {
+      "title": "WebsiteSettings",
+      "description": "Global website branding and settings configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "websiteName": { "type": "string", "maxLength": 100 },
+        "logoUrl": { "type": "string", "maxLength": 500 },
+        "faviconUrl": { "type": "string", "maxLength": 500 },
+        "browserTitle": { "type": "string", "maxLength": 150 },
+        "seoMetaDescription": { "type": "string", "maxLength": 500 },
+        "contactEmail": { "type": "string", "maxLength": 120 },
+        "copyrightText": { "type": "string", "maxLength": 200 }
+      },
+      "required": ["websiteName"]
+    },
+    "DiscordSettings": {
+      "title": "DiscordSettings",
+      "description": "Discord integration and checkout routing endpoints",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mainInviteUrl": { "type": "string", "maxLength": 300 },
+        "supportInviteUrl": { "type": "string", "maxLength": 300 },
+        "buttonText": { "type": "string", "maxLength": 50 },
+        "orderInstructions": { "type": "string", "maxLength": 2000 },
+        "serverStatsMemberCount": { "type": "string", "maxLength": 50 },
+        "openTicketCommand": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["mainInviteUrl"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Customer account profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 150 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" },
+        "disabled": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["user", "admin"] }
+      },
+      "required": ["uid", "email", "displayName"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Administrator account with role assignment",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 150 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["Owner", "Super Admin", "Admin", "Moderator", "Support"] },
+        "permissions": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "disabled": { "type": "boolean" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "HostingPlan": {
+      "title": "HostingPlan",
+      "description": "Minecraft server hosting subscription tier",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100 },
+        "categoryId": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "ram": { "type": "string", "maxLength": 50 },
+        "cpu": { "type": "string", "maxLength": 50 },
+        "storage": { "type": "string", "maxLength": 50 },
+        "playerSlots": { "type": "string", "maxLength": 50 },
+        "priceMonthly": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 10 },
+        "features": { "type": "array" },
+        "badge": { "type": "string", "maxLength": 50 },
+        "isPopular": { "type": "boolean" },
+        "active": { "type": "boolean" },
+        "displayOrder": { "type": "number" }
+      },
+      "required": ["id", "name", "ram", "priceMonthly"]
+    },
+    "OrderRequest": {
+      "title": "OrderRequest",
+      "description": "Customer plan purchase inquiry or pre-order record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 150 },
+        "userName": { "type": "string", "maxLength": 100 },
+        "planId": { "type": "string", "maxLength": 100 },
+        "planName": { "type": "string", "maxLength": 100 },
+        "billingCycle": { "type": "string", "enum": ["Monthly", "Quarterly", "Annual"] },
+        "price": { "type": "number" },
+        "discordTag": { "type": "string", "maxLength": 100 },
+        "serverLocation": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["Pending Discord Contact", "In Discussion", "Fulfilled", "Cancelled"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "planId", "planName"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "User customer support inquiry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 150 },
+        "userName": { "type": "string", "maxLength": 100 },
+        "subject": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 50 },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High"] },
+        "status": { "type": "string", "enum": ["Open", "In Progress", "Answered", "Resolved", "Closed"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "messages": { "type": "array" }
+      },
+      "required": ["id", "userId", "subject", "messages"]
+    }
+  },
+  "firestore": {
+    "/websiteSettings/{docId}": {
+      "schema": "WebsiteSettings",
+      "description": "Global website configuration, logo, and metadata"
+    },
+    "/discordSettings/{docId}": {
+      "schema": "DiscordSettings",
+      "description": "Discord checkout and support invites"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Registered player profiles"
+    },
+    "/admins/{adminId}": {
+      "schema": "AdminUser",
+      "description": "Administrative team members and permissions"
+    },
+    "/plans/{planId}": {
+      "schema": "HostingPlan",
+      "description": "Minecraft server hosting packages"
+    },
+    "/orders/{orderId}": {
+      "schema": "OrderRequest",
+      "description": "Customer plan purchase intents routed to Discord"
+    },
+    "/tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "User customer support tickets"
+    }
+  }
+}
