@@ -236,33 +236,106 @@ export async function saveSocialLinks(links: SocialLinks, actorEmail = 'Admin'):
 
 // ---------------- PLANS & CATEGORIES ----------------
 
+const PLANS_CACHE_KEY = 'novacraft_cached_plans';
+const CATEGORIES_CACHE_KEY = 'novacraft_cached_categories';
+
+export function getLocalCachedPlans(): HostingPlan[] {
+  try {
+    const raw = localStorage.getItem(PLANS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (_) {}
+  return INITIAL_PLANS;
+}
+
+export function setLocalCachedPlans(plans: HostingPlan[]): void {
+  try {
+    localStorage.setItem(PLANS_CACHE_KEY, JSON.stringify(plans));
+  } catch (_) {}
+}
+
+export function getLocalCachedCategories(): PlanCategory[] {
+  try {
+    const raw = localStorage.getItem(CATEGORIES_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (_) {}
+  return INITIAL_CATEGORIES;
+}
+
+export function setLocalCachedCategories(categories: PlanCategory[]): void {
+  try {
+    localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(categories));
+  } catch (_) {}
+}
+
 export async function fetchPlans(): Promise<HostingPlan[]> {
   try {
     const q = query(collection(db, 'plans'), orderBy('displayOrder', 'asc'));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      return snap.docs.map(d => d.data() as HostingPlan);
+      const livePlans = snap.docs.map(d => d.data() as HostingPlan);
+      setLocalCachedPlans(livePlans);
+      return livePlans;
     }
   } catch (err) {
-    console.warn('Error fetching plans from Firestore, using initial:', err);
+    console.warn('Error fetching plans from Firestore, using cached/initial:', err);
   }
-  return INITIAL_PLANS;
+  return getLocalCachedPlans();
 }
 
-export async function savePlan(plan: HostingPlan, actorEmail = 'Admin'): Promise<void> {
+export async function savePlan(plan: HostingPlan, actorEmail = 'Admin'): Promise<{ syncedToCloud: boolean; permissionWarning?: boolean }> {
   const planId = plan.id || `plan-${Date.now()}`;
   const planData: HostingPlan = {
     ...plan,
     id: planId,
     updatedDate: new Date().toISOString(),
   };
-  await setDoc(doc(db, 'plans', planId), cleanUndefinedFields(planData));
-  await logActivity(actorEmail, 'Admin', 'Plan Saved', `Created or updated plan: ${plan.name} (${plan.ram})`);
+
+  // 1. Immediately update local cache so changes are NEVER lost
+  const currentList = getLocalCachedPlans();
+  const index = currentList.findIndex(p => p.id === planId);
+  let updatedList: HostingPlan[];
+  if (index >= 0) {
+    updatedList = [...currentList];
+    updatedList[index] = planData;
+  } else {
+    updatedList = [...currentList, planData];
+  }
+  setLocalCachedPlans(updatedList);
+
+  // 2. Attempt Firestore sync
+  try {
+    await setDoc(doc(db, 'plans', planId), cleanUndefinedFields(planData));
+    try {
+      await logActivity(actorEmail, 'Admin', 'Plan Saved', `Created or updated plan: ${plan.name} (${plan.ram})`);
+    } catch (_) {}
+    return { syncedToCloud: true };
+  } catch (err: any) {
+    console.warn('Firestore cloud sync for plan deferred (security rules need to be published in Firebase Console):', err?.message || err);
+    return { syncedToCloud: false, permissionWarning: true };
+  }
 }
 
-export async function deletePlanDoc(planId: string, actorEmail = 'Admin'): Promise<void> {
-  await deleteDoc(doc(db, 'plans', planId));
-  await logActivity(actorEmail, 'Admin', 'Plan Deleted', `Deleted plan ID: ${planId}`);
+export async function deletePlanDoc(planId: string, actorEmail = 'Admin'): Promise<{ syncedToCloud: boolean; permissionWarning?: boolean }> {
+  // Update local cache first
+  const currentList = getLocalCachedPlans().filter(p => p.id !== planId);
+  setLocalCachedPlans(currentList);
+
+  try {
+    await deleteDoc(doc(db, 'plans', planId));
+    try {
+      await logActivity(actorEmail, 'Admin', 'Plan Deleted', `Deleted plan ID: ${planId}`);
+    } catch (_) {}
+    return { syncedToCloud: true };
+  } catch (err: any) {
+    console.warn('Firestore cloud delete for plan deferred:', err?.message || err);
+    return { syncedToCloud: false, permissionWarning: true };
+  }
 }
 
 export async function fetchCategories(): Promise<PlanCategory[]> {
@@ -270,24 +343,57 @@ export async function fetchCategories(): Promise<PlanCategory[]> {
     const q = query(collection(db, 'planCategories'), orderBy('displayOrder', 'asc'));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      return snap.docs.map(d => d.data() as PlanCategory);
+      const live = snap.docs.map(d => d.data() as PlanCategory);
+      setLocalCachedCategories(live);
+      return live;
     }
   } catch (err) {
-    console.warn('Error fetching categories from Firestore:', err);
+    console.warn('Error fetching categories from Firestore, using cached/initial:', err);
   }
-  return INITIAL_CATEGORIES;
+  return getLocalCachedCategories();
 }
 
-export async function saveCategory(category: PlanCategory, actorEmail = 'Admin'): Promise<void> {
+export async function saveCategory(category: PlanCategory, actorEmail = 'Admin'): Promise<{ syncedToCloud: boolean; permissionWarning?: boolean }> {
   const catId = category.id || `cat-${Date.now()}`;
   const data: PlanCategory = { ...category, id: catId };
-  await setDoc(doc(db, 'planCategories', catId), cleanUndefinedFields(data));
-  await logActivity(actorEmail, 'Admin', 'Category Saved', `Saved plan category: ${category.name}`);
+
+  const currentCats = getLocalCachedCategories();
+  const idx = currentCats.findIndex(c => c.id === catId);
+  let updatedCats: PlanCategory[];
+  if (idx >= 0) {
+    updatedCats = [...currentCats];
+    updatedCats[idx] = data;
+  } else {
+    updatedCats = [...currentCats, data];
+  }
+  setLocalCachedCategories(updatedCats);
+
+  try {
+    await setDoc(doc(db, 'planCategories', catId), cleanUndefinedFields(data));
+    try {
+      await logActivity(actorEmail, 'Admin', 'Category Saved', `Saved plan category: ${category.name}`);
+    } catch (_) {}
+    return { syncedToCloud: true };
+  } catch (err: any) {
+    console.warn('Firestore cloud sync for category deferred:', err?.message || err);
+    return { syncedToCloud: false, permissionWarning: true };
+  }
 }
 
-export async function deleteCategoryDoc(catId: string, actorEmail = 'Admin'): Promise<void> {
-  await deleteDoc(doc(db, 'planCategories', catId));
-  await logActivity(actorEmail, 'Admin', 'Category Deleted', `Deleted category ID: ${catId}`);
+export async function deleteCategoryDoc(catId: string, actorEmail = 'Admin'): Promise<{ syncedToCloud: boolean; permissionWarning?: boolean }> {
+  const currentCats = getLocalCachedCategories().filter(c => c.id !== catId);
+  setLocalCachedCategories(currentCats);
+
+  try {
+    await deleteDoc(doc(db, 'planCategories', catId));
+    try {
+      await logActivity(actorEmail, 'Admin', 'Category Deleted', `Deleted category ID: ${catId}`);
+    } catch (_) {}
+    return { syncedToCloud: true };
+  } catch (err: any) {
+    console.warn('Firestore cloud delete for category deferred:', err?.message || err);
+    return { syncedToCloud: false, permissionWarning: true };
+  }
 }
 
 // ---------------- FEATURES, FAQS, REVIEWS, ANNOUNCEMENTS ----------------

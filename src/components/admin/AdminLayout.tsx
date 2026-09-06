@@ -8,6 +8,7 @@ import {
   Home,
   Users,
   Shield,
+  ShieldCheck,
   Bell,
   HelpCircle,
   FileText,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../firebase/authContext';
 import { useSettings } from '../../firebase/settingsContext';
+import { FirestoreRulesModal } from './FirestoreRulesModal';
 
 export type AdminSection =
   | 'dashboard'
@@ -51,6 +53,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const { user, userProfile, isAdmin, adminRole, hasPermission, logout } = useAuth();
   const { websiteSettings, discordSettings } = useSettings();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [rulesModalOpen, setRulesModalOpen] = useState(false);
 
   const menuItems: {
     id: AdminSection;
@@ -179,6 +182,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           {/* Bottom Actions */}
           <div className="pt-4 border-t border-slate-800 space-y-2">
             <button
+              onClick={() => setRulesModalOpen(true)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors cursor-pointer"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Firebase Security Rules</span>
+            </button>
+
+            <button
               onClick={onExitToWebsite}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
             >
@@ -201,6 +212,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-7xl mx-auto w-full">
         {children}
       </main>
+
+      {/* Firebase Rules Modal */}
+      <FirestoreRulesModal
+        isOpen={rulesModalOpen}
+        onClose={() => setRulesModalOpen(false)}
+      />
     </div>
   );
 };

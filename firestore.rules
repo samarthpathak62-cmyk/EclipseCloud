@@ -11,10 +11,17 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
+    function isSystemOwner() {
+      return isAuthenticated() && (
+        request.auth.token.email == "samarthpathak62@gmail.com" ||
+        request.auth.token.email == "suniitapathak@gmail.com"
+      );
+    }
+
     function isAdmin() {
       return isAuthenticated() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email == "samarthpathak62@gmail.com"
+        isSystemOwner()
       );
     }
     
@@ -90,7 +97,7 @@ service cloud.firestore {
     // Admin records and roles
     match /admins/{adminId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == adminId && isSystemOwner());
     }
 
     match /roles/{roleId} {

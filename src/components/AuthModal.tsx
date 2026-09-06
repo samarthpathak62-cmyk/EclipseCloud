@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, User, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Lock, Mail, User, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, Copy, ExternalLink, Check } from 'lucide-react';
 import { useAuth } from '../firebase/authContext';
 import { useSettings } from '../firebase/settingsContext';
+import { firebaseProjectId } from '../firebase/config';
 
 export const AuthModal: React.FC = () => {
   const {
@@ -22,12 +23,17 @@ export const AuthModal: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
+  const [operationNotAllowed, setOperationNotAllowed] = useState(false);
 
   if (!isAuthModalOpen) return null;
 
   const handleGoogleSignIn = async () => {
     setErrorMsg('');
     setSuccessMsg('');
+    setUnauthorizedDomain(null);
+    setOperationNotAllowed(false);
     setSubmitting(true);
     try {
       await signInWithGoogle();
@@ -40,6 +46,9 @@ export const AuthModal: React.FC = () => {
       } else if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
         setSubmitting(false);
         return;
+      } else if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
+        setUnauthorizedDomain(window.location.hostname);
+        msg = '';
       }
       setErrorMsg(msg);
     } finally {
@@ -51,6 +60,8 @@ export const AuthModal: React.FC = () => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
+    setUnauthorizedDomain(null);
+    setOperationNotAllowed(false);
     setSubmitting(true);
 
     try {
@@ -74,7 +85,8 @@ export const AuthModal: React.FC = () => {
       console.error('Auth error:', err);
       let msg = err.message || 'Authentication failed. Please check credentials.';
       if (msg.includes('auth/operation-not-allowed')) {
-        msg = 'Email/Password sign-in is not enabled for this project. Please use "Continue with Google" to sign in.';
+        setOperationNotAllowed(true);
+        msg = '';
       } else if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password')) {
         msg = 'Invalid email or password.';
       } else if (msg.includes('auth/email-already-in-use')) {
@@ -168,6 +180,90 @@ export const AuthModal: React.FC = () => {
           </div>
 
           {/* Feedback banners */}
+          {unauthorizedDomain && (
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-slate-200 text-xs space-y-3 animate-in fade-in duration-200">
+              <div className="flex items-start gap-2.5 text-amber-400">
+                <AlertCircle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-amber-300 text-xs">Firebase Authorized Domain Required</h4>
+                  <p className="text-[11px] text-slate-300 font-normal mt-0.5 leading-relaxed">
+                    Google Sign-In is blocked until this preview domain is whitelisted in your Firebase project (<span className="font-mono text-amber-300">{firebaseProjectId}</span>).
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-slate-400 text-[10px] font-semibold">
+                  <span>Domain to Authorize:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(unauthorizedDomain);
+                      setCopiedDomain(true);
+                      setTimeout(() => setCopiedDomain(false), 2000);
+                    }}
+                    className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 flex items-center gap-1.5 text-[10px] font-bold transition-colors cursor-pointer"
+                  >
+                    {copiedDomain ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedDomain ? 'Copied to Clipboard!' : 'Copy Domain'}</span>
+                  </button>
+                </div>
+                <div className="p-2 bg-slate-900 rounded border border-slate-800 text-amber-300 break-all select-all font-mono text-[11px]">
+                  {unauthorizedDomain}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-[11px] text-slate-300">
+                  <p className="font-semibold text-white mb-1">Quick 3-step fix:</p>
+                  <ol className="list-decimal list-inside text-slate-400 space-y-0.5 text-[11px]">
+                    <li>Click the link below to open Firebase Auth Settings</li>
+                    <li>Scroll down to <strong>Authorized domains</strong> and click <strong>Add domain</strong></li>
+                    <li>Paste the copied domain and click Save</li>
+                  </ol>
+                </div>
+
+                <a
+                  href={`https://console.firebase.google.com/project/${firebaseProjectId}/authentication/settings`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-center flex items-center justify-center gap-1.5 transition-colors shadow-sm text-xs"
+                >
+                  <span>Open Firebase Auth Settings</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+
+              <div className="pt-2 border-t border-slate-800/80 text-[11px] text-emerald-400 flex items-start gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Instant alternative:</strong> You can register or log in using the <strong>Email & Password</strong> form below right now without waiting!
+                </span>
+              </div>
+            </div>
+          )}
+
+          {operationNotAllowed && (
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-slate-200 text-xs space-y-2">
+              <div className="flex items-start gap-2 text-amber-400 font-bold">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>Email/Password Provider Not Enabled in Firebase</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                In your Firebase Console, navigate to <strong>Authentication → Sign-in method</strong> and click <strong>Enable</strong> next to <strong>Email/Password</strong>.
+              </p>
+              <a
+                href={`https://console.firebase.google.com/project/${firebaseProjectId}/authentication/providers`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-bold text-[11px]"
+              >
+                <span>Open Sign-in Providers Settings</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex flex-col gap-2">
               <div className="flex items-start gap-2">

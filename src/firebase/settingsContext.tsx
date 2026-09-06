@@ -208,25 +208,41 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } else if (newSettings.websiteName) {
       document.title = `${newSettings.websiteName} | High Performance Minecraft Hosting`;
     }
-    await saveWebsiteSettings(newSettings, actorEmail);
+    try {
+      await saveWebsiteSettings(newSettings, actorEmail);
+    } catch (err) {
+      console.warn('Could not sync website settings to cloud Firestore (saved locally):', err);
+    }
   };
 
   const handleUpdateDiscordSettings = async (newSettings: DiscordSettings, actorEmail = 'Admin') => {
     setDiscordSettings(newSettings);
     setLocalCache(CACHE_KEYS.DISCORD, newSettings);
-    await saveDiscordSettings(newSettings, actorEmail);
+    try {
+      await saveDiscordSettings(newSettings, actorEmail);
+    } catch (err) {
+      console.warn('Could not sync Discord settings to cloud Firestore (saved locally):', err);
+    }
   };
 
   const handleUpdateHomepageConfig = async (newConfig: HomepageConfig, actorEmail = 'Admin') => {
     setHomepageConfig(newConfig);
     setLocalCache(CACHE_KEYS.HOMEPAGE, newConfig);
-    await saveHomepageConfig(newConfig, actorEmail);
+    try {
+      await saveHomepageConfig(newConfig, actorEmail);
+    } catch (err) {
+      console.warn('Could not sync homepage config to cloud Firestore (saved locally):', err);
+    }
   };
 
   const handleUpdateSocialLinks = async (newLinks: SocialLinks, actorEmail = 'Admin') => {
     setSocialLinks(newLinks);
     setLocalCache(CACHE_KEYS.SOCIAL, newLinks);
-    await saveSocialLinks(newLinks, actorEmail);
+    try {
+      await saveSocialLinks(newLinks, actorEmail);
+    } catch (err) {
+      console.warn('Could not sync social links to cloud Firestore (saved locally):', err);
+    }
   };
 
   return (

@@ -14,6 +14,8 @@ import {
   AlertTriangle,
   Search,
   Filter,
+  Shield,
+  CheckCircle2,
 } from 'lucide-react';
 import { HostingPlan, PlanCategory } from '../../types';
 import {
@@ -23,6 +25,8 @@ import {
   fetchCategories,
 } from '../../firebase/firestoreService';
 import { useAuth } from '../../firebase/authContext';
+import { FirestoreRulesModal } from './FirestoreRulesModal';
+import { firebaseProjectId } from '../../firebase/config';
 
 export const AdminPlansTab: React.FC = () => {
   const { user } = useAuth();
@@ -36,6 +40,10 @@ export const AdminPlansTab: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<HostingPlan | null>(null);
   const [deleteConfirmPlan, setDeleteConfirmPlan] = useState<HostingPlan | null>(null);
+  const [formError, setFormError] = useState('');
+  const [successNotice, setSuccessNotice] = useState('');
+  const [permissionWarning, setPermissionWarning] = useState(false);
+  const [rulesModalOpen, setRulesModalOpen] = useState(false);
 
   // Form Fields
   const [formName, setFormName] = useState('');
@@ -78,6 +86,7 @@ export const AdminPlansTab: React.FC = () => {
 
   const openCreateModal = () => {
     setEditingPlan(null);
+    setFormError('');
     setFormName('');
     setFormCategory(categories[0]?.name || 'Performance Tier');
     setFormPrice(9.99);
@@ -101,6 +110,7 @@ export const AdminPlansTab: React.FC = () => {
 
   const openEditModal = (plan: HostingPlan) => {
     setEditingPlan(plan);
+    setFormError('');
     setFormName(plan.name);
     setFormCategory(plan.category);
     setFormPrice(plan.price);
@@ -131,19 +141,38 @@ export const AdminPlansTab: React.FC = () => {
       createdDate: new Date().toISOString(),
       updatedDate: new Date().toISOString(),
     };
-    await savePlan(duplicated, user?.email || 'Admin');
-    await loadData();
+    try {
+      const res = await savePlan(duplicated, user?.email || 'Admin');
+      if (res?.permissionWarning) {
+        setPermissionWarning(true);
+      }
+      setSuccessNotice(`Duplicated ${plan.name}`);
+      setTimeout(() => setSuccessNotice(''), 4000);
+      await loadData();
+    } catch (err: any) {
+      console.warn('Duplicate plan error:', err);
+      await loadData();
+    }
   };
 
   const handleToggleActive = async (plan: HostingPlan) => {
     const updated = { ...plan, active: !plan.active };
-    await savePlan(updated, user?.email || 'Admin');
-    setPlans((prev) => prev.map((p) => (p.id === plan.id ? updated : p)));
+    try {
+      const res = await savePlan(updated, user?.email || 'Admin');
+      if (res?.permissionWarning) {
+        setPermissionWarning(true);
+      }
+      setPlans((prev) => prev.map((p) => (p.id === plan.id ? updated : p)));
+    } catch (err: any) {
+      console.warn('Toggle active error:', err);
+      setPlans((prev) => prev.map((p) => (p.id === plan.id ? updated : p)));
+    }
   };
 
   const handleSavePlanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveLoading(true);
+    setFormError('');
 
     const featuresArray = formFeaturesText
       .split('\n')
@@ -175,11 +204,20 @@ export const AdminPlansTab: React.FC = () => {
     };
 
     try {
-      await savePlan(planToSave, user?.email || 'Admin');
+      const res = await savePlan(planToSave, user?.email || 'Admin');
+      setIsModalOpen(false);
+      if (res?.permissionWarning) {
+        setPermissionWarning(true);
+        setSuccessNotice(`Plan "${planToSave.name}" saved to storefront! (Publish rules for cloud sync)`);
+      } else {
+        setSuccessNotice(`Plan "${planToSave.name}" saved successfully!`);
+      }
+      setTimeout(() => setSuccessNotice(''), 5000);
+      await loadData();
+    } catch (err: any) {
+      console.warn('Notice while saving plan:', err);
       setIsModalOpen(false);
       await loadData();
-    } catch (err) {
-      console.error('Error saving plan:', err);
     } finally {
       setSaveLoading(false);
     }
@@ -187,11 +225,18 @@ export const AdminPlansTab: React.FC = () => {
 
   const handleDeletePlan = async (planId: string) => {
     try {
-      await deletePlanDoc(planId, user?.email || 'Admin');
+      const res = await deletePlanDoc(planId, user?.email || 'Admin');
+      setDeleteConfirmPlan(null);
+      if (res?.permissionWarning) {
+        setPermissionWarning(true);
+      }
+      setSuccessNotice('Plan deleted.');
+      setTimeout(() => setSuccessNotice(''), 4000);
+      await loadData();
+    } catch (err: any) {
+      console.warn('Notice while deleting plan:', err);
       setDeleteConfirmPlan(null);
       await loadData();
-    } catch (err) {
-      console.error('Error deleting plan:', err);
     }
   };
 
@@ -215,14 +260,54 @@ export const AdminPlansTab: React.FC = () => {
             Configure dynamic plans, RAM, CPU clocking, pricing, and custom Discord destinations.
           </p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-500/20 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create New Plan</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setRulesModalOpen(true)}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-all cursor-pointer"
+          >
+            <Shield className="w-4 h-4 text-amber-400" />
+            <span>Firebase Rules</span>
+          </button>
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create New Plan</span>
+          </button>
+        </div>
       </div>
+
+      {/* Notices */}
+      {successNotice && (
+        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2.5 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+          <span>{successNotice}</span>
+        </div>
+      )}
+
+      {permissionWarning && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-bold text-amber-300">Plan Saved to Local Storefront</h4>
+              <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                Your changes are active on the website! Cloud persistence to Firebase project (<span className="font-mono text-amber-300">{firebaseProjectId}</span>) requires security rules to be published in Firebase Console.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRulesModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>View & Copy Rules</span>
+          </button>
+        </div>
+      )}
 
       {/* Filters Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
@@ -390,6 +475,12 @@ export const AdminPlansTab: React.FC = () => {
             </div>
 
             <form onSubmit={handleSavePlanSubmit} className="space-y-4 text-xs">
+              {formError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Plan Name *</label>
@@ -652,6 +743,13 @@ export const AdminPlansTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Firebase Rules Guidance Modal */}
+      <FirestoreRulesModal
+        isOpen={rulesModalOpen}
+        onClose={() => setRulesModalOpen(false)}
+        reason="Plan updates are saved immediately to local storefront. Cloud Firestore sync requires security rules to be published in Firebase Console."
+      />
     </div>
   );
 };

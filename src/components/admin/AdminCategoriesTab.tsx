@@ -66,15 +66,28 @@ export const AdminCategoriesTab: React.FC = () => {
       displayOrder: Number(displayOrder) || 1,
       active,
     };
-    await saveCategory(catToSave, user?.email || 'Admin');
-    setIsModalOpen(false);
-    await loadData();
+    try {
+      await saveCategory(catToSave, user?.email || 'Admin');
+      setIsModalOpen(false);
+      await loadData();
+    } catch (err: any) {
+      console.warn('Category save error:', err);
+      // Category is saved in local cache
+      setIsModalOpen(false);
+      await loadData();
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await deleteCategoryDoc(id, user?.email || 'Admin');
-    setDeleteConfirm(null);
-    await loadData();
+    try {
+      await deleteCategoryDoc(id, user?.email || 'Admin');
+      setDeleteConfirm(null);
+      await loadData();
+    } catch (err: any) {
+      console.warn('Category delete error:', err);
+      setDeleteConfirm(null);
+      await loadData();
+    }
   };
 
   return (
