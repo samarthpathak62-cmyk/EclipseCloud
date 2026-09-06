@@ -145,7 +145,7 @@ export interface UserProfile {
   createdAt: string;
   disabled?: boolean;
   status?: 'Active' | 'Suspended';
-  role: 'user' | 'admin' | 'superadmin' | 'owner';
+  role: 'user' | 'admin' | 'superadmin' | 'owner' | AdminRole | string;
   phoneNumber?: string;
   interestedPlansCount?: number;
 }

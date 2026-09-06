@@ -23,6 +23,7 @@ export const AdminRolesTab: React.FC = () => {
   const [editingAdmin, setEditingAdmin] = useState<AdminUser | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<AdminUser | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Form
   const [email, setEmail] = useState('');
@@ -93,19 +94,28 @@ export const AdminRolesTab: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const adminToSave: AdminUser = {
-      uid: editingAdmin?.uid || `admin-${Date.now()}`,
-      email: email.trim().toLowerCase(),
-      displayName: displayName.trim() || email.split('@')[0],
-      role,
-      permissions: role === 'Owner' ? [...ALL_PERMISSIONS] : permissions,
-      assignedBy: currentAuthUser?.email || 'System',
-      assignedAt: editingAdmin?.assignedAt || new Date().toISOString(),
-    };
+    setActionError(null);
+    setSaving(true);
+    try {
+      const adminToSave: AdminUser = {
+        uid: editingAdmin?.uid || `admin-${Date.now()}`,
+        email: email.trim().toLowerCase(),
+        displayName: displayName.trim() || email.split('@')[0],
+        role,
+        permissions: role === 'Owner' ? [...ALL_PERMISSIONS] : permissions,
+        assignedBy: currentAuthUser?.email || 'System',
+        assignedAt: editingAdmin?.assignedAt || new Date().toISOString(),
+      };
 
-    await saveAdminDoc(adminToSave, currentAuthUser?.email || 'Admin');
-    setIsModalOpen(false);
-    await loadData();
+      await saveAdminDoc(adminToSave, currentAuthUser?.email || 'Admin');
+      setIsModalOpen(false);
+      await loadData();
+    } catch (err: any) {
+      console.error('Error saving staff member:', err);
+      setActionError('Error saving staff member: ' + (err?.message || 'Permission denied'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (admin: AdminUser) => {
@@ -342,9 +352,10 @@ export const AdminRolesTab: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold"
+                  disabled={saving}
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold disabled:opacity-50 transition-opacity"
                 >
-                  Save Staff Member
+                  {saving ? 'Saving...' : 'Save Staff Member'}
                 </button>
               </div>
             </form>

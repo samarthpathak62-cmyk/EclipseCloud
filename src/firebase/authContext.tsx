@@ -10,10 +10,19 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  getDocs,
+  query,
+  where,
+  deleteDoc,
+} from 'firebase/firestore';
 import { auth, db } from './config';
 import { UserProfile, AdminUser, AdminRoleType } from '../types';
-import { logActivity } from './firestoreService';
+import { logActivity, initializeSeedDataIfNeeded } from './firestoreService';
 import { ALL_PERMISSIONS } from './seedData';
 
 export { ALL_PERMISSIONS } from './seedData';
@@ -88,57 +97,108 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await setDoc(userRef, profile);
         await logActivity(profile.email, 'User', 'Account Registered', 'New account created successfully');
       }
-      setUserProfile(profile);
 
       // Check admin status from /admins/{uid}
       const adminRef = doc(db, 'admins', firebaseUser.uid);
       const adminSnap = await getDoc(adminRef);
 
       const isSystemOwner = firebaseUser.email && SYSTEM_OWNERS.includes(firebaseUser.email.toLowerCase());
+      let resolvedAdminData: AdminUser | null = null;
 
       if (adminSnap.exists()) {
-        const adminData = adminSnap.data() as AdminUser;
-        if (!adminData.disabled) {
-          setIsAdmin(true);
-          setAdminRole(adminData.role);
-          setAdminPermissions(adminData.permissions || []);
-        } else {
-          setIsAdmin(false);
-          setAdminRole(null);
-          setAdminPermissions([]);
+        resolvedAdminData = adminSnap.data() as AdminUser;
+      } else if (firebaseUser.email) {
+        // 1. If not found by UID, check if an admin was created with their email (e.g. before registration or with temp ID)
+        try {
+          const emailQ = query(collection(db, 'admins'), where('email', '==', firebaseUser.email.toLowerCase()));
+          const emailSnap = await getDocs(emailQ);
+          if (!emailSnap.empty) {
+            const matchedDoc = emailSnap.docs[0];
+            const matchedData = matchedDoc.data() as AdminUser;
+            resolvedAdminData = {
+              ...matchedData,
+              uid: firebaseUser.uid,
+              email: firebaseUser.email.toLowerCase(),
+              displayName: firebaseUser.displayName || matchedData.displayName || profile.displayName,
+            };
+            // Link directly to /admins/{uid} so security rules match request.auth.uid
+            await setDoc(adminRef, resolvedAdminData);
+            if (matchedDoc.id !== firebaseUser.uid) {
+              try {
+                await deleteDoc(matchedDoc.ref);
+              } catch (_) {}
+            }
+          }
+        } catch (err) {
+          console.warn('Could not query admins by email:', err);
         }
-      } else if (isSystemOwner) {
-        // Automatically grant Owner access to system owner
-        const ownerRecord: AdminUser = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email!,
-          displayName: profile.displayName,
-          role: 'Owner',
-          permissions: [...ALL_PERMISSIONS],
-          createdAt: new Date().toISOString(),
-        };
-        await setDoc(adminRef, ownerRecord);
+      }
+
+      // 2. First Admin / New Database Auto-Bootstrap:
+      // If no admin record was found, check if this is the very first user on a fresh Firebase database
+      if (!resolvedAdminData) {
+        let isFirstDatabaseUser = false;
+        try {
+          const allAdmins = await getDocs(collection(db, 'admins'));
+          const actualStaff = allAdmins.docs.filter((d) => d.id !== 'owner_lock');
+          if (actualStaff.length === 0) {
+            isFirstDatabaseUser = true;
+          }
+        } catch (e) {
+          console.warn('Could not verify existing staff count:', e);
+        }
+
+        if (isFirstDatabaseUser || isSystemOwner) {
+          resolvedAdminData = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || 'owner@minecraft-hosting.com',
+            displayName: profile.displayName || 'Server Owner',
+            role: 'Owner',
+            permissions: [...ALL_PERMISSIONS],
+            createdAt: new Date().toISOString(),
+            assignedBy: 'System Auto-Bootstrap',
+          };
+          await setDoc(adminRef, resolvedAdminData);
+          try {
+            await setDoc(doc(db, 'admins', 'owner_lock'), {
+              initialized: true,
+              ownerUid: firebaseUser.uid,
+              ownerEmail: resolvedAdminData.email,
+              timestamp: new Date().toISOString(),
+            });
+          } catch (_) {}
+          // Ensure database collections are seeded with default plans and settings
+          await initializeSeedDataIfNeeded();
+          console.log('Granted Owner privileges to:', firebaseUser.email);
+        }
+      }
+
+      // Apply roles and state
+      if (resolvedAdminData && !resolvedAdminData.disabled) {
         setIsAdmin(true);
-        setAdminRole('Owner');
-        setAdminPermissions([...ALL_PERMISSIONS]);
-        console.log('System owner privileges automatically granted to:', firebaseUser.email);
+        setAdminRole(resolvedAdminData.role);
+        setAdminPermissions(resolvedAdminData.permissions || [...ALL_PERMISSIONS]);
+        profile.role = resolvedAdminData.role;
       } else {
         setIsAdmin(false);
         setAdminRole(null);
         setAdminPermissions([]);
       }
+
+      setUserProfile(profile);
     } catch (err) {
       console.warn('Error loading user data from Firestore:', err);
       // Fallback local profile if offline or restricted
+      const fallbackRole = (firebaseUser.email && SYSTEM_OWNERS.includes(firebaseUser.email.toLowerCase())) ? 'Owner' : 'user';
       setUserProfile({
         uid: firebaseUser.uid,
         email: firebaseUser.email || '',
         displayName: firebaseUser.displayName || 'Player',
         createdAt: new Date().toISOString(),
         disabled: false,
-        role: 'user',
+        role: fallbackRole,
       });
-      if (firebaseUser.email && SYSTEM_OWNERS.includes(firebaseUser.email.toLowerCase())) {
+      if (fallbackRole === 'Owner') {
         setIsAdmin(true);
         setAdminRole('Owner');
         setAdminPermissions([...ALL_PERMISSIONS]);

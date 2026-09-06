@@ -449,7 +449,9 @@ export async function updateUserDisabledState(userId: string, disabled: boolean,
 export async function fetchAdminUsers(): Promise<AdminUser[]> {
   try {
     const snap = await getDocs(collection(db, 'admins'));
-    return snap.docs.map(d => d.data() as AdminUser);
+    return snap.docs
+      .filter((d) => d.id !== 'owner_lock' && d.data()?.email)
+      .map((d) => ({ ...d.data(), uid: d.id } as AdminUser));
   } catch (err) {
     console.warn('Error fetching admins:', err);
     return [];
@@ -457,13 +459,81 @@ export async function fetchAdminUsers(): Promise<AdminUser[]> {
 }
 
 export async function setAdminRecord(admin: AdminUser, actorEmail = 'Owner'): Promise<void> {
-  await setDoc(doc(db, 'admins', admin.uid), cleanUndefinedFields(admin));
-  await logActivity(actorEmail, 'Owner', 'Admin Assigned', `Assigned role ${admin.role} to ${admin.email}`);
+  // If UID is not provided or is temporary, search users by email to link real UID
+  let resolvedUid = admin.uid;
+  if (!resolvedUid || resolvedUid.startsWith('admin-')) {
+    try {
+      const uQ = query(collection(db, 'users'), where('email', '==', admin.email.toLowerCase()));
+      const uSnap = await getDocs(uQ);
+      if (!uSnap.empty) {
+        resolvedUid = uSnap.docs[0].id;
+      } else {
+        resolvedUid = admin.email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
+      }
+    } catch (e) {
+      console.warn('Could not resolve user UID by email:', e);
+      resolvedUid = admin.email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
+    }
+  }
+
+  const record: AdminUser = {
+    ...admin,
+    uid: resolvedUid,
+    email: admin.email.toLowerCase(),
+  };
+
+  await setDoc(doc(db, 'admins', resolvedUid), cleanUndefinedFields(record));
+
+  // Sync role to /users collection if user document exists
+  try {
+    const userRef = doc(db, 'users', resolvedUid);
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+      await updateDoc(userRef, { role: admin.role });
+    }
+  } catch (e) {
+    // Non-blocking
+  }
+
+  await logActivity(actorEmail, 'Owner', 'Admin Assigned', `Assigned role ${admin.role} to ${admin.email} (UID: ${resolvedUid})`);
 }
 
 export async function removeAdminRecord(adminUid: string, actorEmail = 'Owner'): Promise<void> {
   await deleteDoc(doc(db, 'admins', adminUid));
+  try {
+    const userRef = doc(db, 'users', adminUid);
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+      await updateDoc(userRef, { role: 'user' });
+    }
+  } catch (e) {
+    // Non-blocking
+  }
   await logActivity(actorEmail, 'Owner', 'Admin Removed', `Removed admin privilege for UID ${adminUid}`);
+}
+
+export async function promoteUserToAdmin(
+  userId: string,
+  userEmail: string,
+  displayName: string,
+  role: string,
+  permissions: string[],
+  actorEmail = 'Owner'
+): Promise<void> {
+  if (role === 'user') {
+    await removeAdminRecord(userId, actorEmail);
+    return;
+  }
+  const adminData: AdminUser = {
+    uid: userId,
+    email: userEmail.toLowerCase(),
+    displayName: displayName || userEmail.split('@')[0],
+    role: role as any,
+    permissions,
+    assignedBy: actorEmail,
+    assignedAt: new Date().toISOString(),
+  };
+  await setAdminRecord(adminData, actorEmail);
 }
 
 export async function fetchRoles(): Promise<AdminRoleDefinition[]> {
