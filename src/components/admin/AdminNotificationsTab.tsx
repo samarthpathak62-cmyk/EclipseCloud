@@ -16,9 +16,12 @@ import {
   deleteNotificationDoc,
 } from '../../firebase/firestoreService';
 import { useAuth } from '../../firebase/authContext';
+import { useSettings } from '../../firebase/settingsContext';
+import { sendNotificationEmail } from '../../services/emailService';
 
 export const AdminNotificationsTab: React.FC = () => {
   const { user } = useAuth();
+  const { websiteSettings } = useSettings();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,9 +32,11 @@ export const AdminNotificationsTab: React.FC = () => {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [type, setType] = useState<'System' | 'Announcement' | 'Promotion' | 'Account'>('System');
+  const [sendEmail, setSendEmail] = useState(false);
 
   const [sending, setSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
+  const [sendError, setSendError] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -57,6 +62,7 @@ export const AdminNotificationsTab: React.FC = () => {
     e.preventDefault();
     if (!title.trim() || !message.trim()) return;
     setSending(true);
+    setSendError('');
 
     try {
       const targetUser = users.find((u) => u.uid === targetUserId);
@@ -69,12 +75,38 @@ export const AdminNotificationsTab: React.FC = () => {
         targetUserEmail: targetType === 'single' ? targetUser?.email : undefined,
       });
 
+      // Optional email delivery. In-app notification creation still succeeds even
+      // when email delivery is disabled or not configured.
+      if (sendEmail) {
+        const recipients = targetType === 'single'
+          ? (targetUser?.email ? [targetUser] : [])
+          : users.filter(u => !!u.email);
+
+        if (recipients.length === 0) {
+          throw new Error('No valid recipient email address was found.');
+        }
+
+        for (const recipient of recipients) {
+          await sendNotificationEmail({
+            to: recipient.email,
+            recipientName: recipient.displayName,
+            title: title.trim(),
+            message: message.trim(),
+            type,
+            websiteName: websiteSettings.websiteName,
+          });
+        }
+      }
+
       setTitle('');
       setMessage('');
+      setSendEmail(false);
       setSendSuccess(true);
       setTimeout(() => setSendSuccess(false), 3000);
       await loadData();
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Could not dispatch notification.';
+      setSendError(errorMessage);
       console.error('Error dispatching notification:', err);
     } finally {
       setSending(false);
@@ -107,6 +139,11 @@ export const AdminNotificationsTab: React.FC = () => {
             <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
               <CheckCircle className="w-4 h-4" />
               <span>Notice successfully broadcast!</span>
+            </div>
+          )}
+          {sendError && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+              {sendError}
             </div>
           )}
 
@@ -195,6 +232,21 @@ export const AdminNotificationsTab: React.FC = () => {
                 placeholder="Details of the announcement displayed in user notifications list..."
               />
             </div>
+
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sendEmail}
+                onChange={(e) => setSendEmail(e.target.checked)}
+                className="mt-0.5 accent-amber-500"
+              />
+              <span>
+                <span className="block text-xs font-semibold text-white">Also send by email</span>
+                <span className="block text-[10px] text-slate-500 mt-0.5">
+                  Sends the same notice to the selected user or all registered users with an email address.
+                </span>
+              </span>
+            </label>
 
             <button
               type="submit"
