@@ -19,7 +19,50 @@ import { LoadingScreen } from './components/LoadingScreen';
 export type AppView = 'home' | 'plans' | 'dashboard' | 'admin';
 
 const MainAppContent: React.FC = () => {
-  const [currentView, setCurrentView] = useState<AppView>('home');
+  const [currentView, setCurrentView] = useState<AppView>(() => {
+    const state = window.history.state;
+    return state?.eclipseCloudView || 'home';
+  });
+  const isHistoryNavigation = React.useRef(false);
+
+  // Keep the site as a single-page app while still making the browser Back button
+  // navigate through the website's internal views instead of leaving the site.
+  useEffect(() => {
+    const currentState = window.history.state;
+    if (!currentState?.eclipseCloudView) {
+      window.history.replaceState({ eclipseCloudView: 'home' }, '', window.location.href);
+      window.history.pushState({ eclipseCloudView: 'home', eclipseCloudBackGuard: true }, '', window.location.href);
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      const nextView = event.state?.eclipseCloudView as AppView | undefined;
+
+      if (nextView) {
+        isHistoryNavigation.current = true;
+        setCurrentView(nextView);
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        return;
+      }
+
+      // At the storefront root, keep the first browser Back press inside the SPA.
+      window.history.pushState({ eclipseCloudView: 'home', eclipseCloudBackGuard: true }, '', window.location.href);
+      isHistoryNavigation.current = true;
+      setCurrentView('home');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = (view: AppView, replace = false) => {
+    if (view === currentView) return;
+    setCurrentView(view);
+    if (replace) {
+      window.history.replaceState({ eclipseCloudView: view }, '', window.location.href);
+    } else {
+      window.history.pushState({ eclipseCloudView: view }, '', window.location.href);
+    }
+  };
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [accessDeniedNotice, setAccessDeniedNotice] = useState<string | null>(null);
   const [dashboardTab, setDashboardTab] = useState<
@@ -34,7 +77,7 @@ const MainAppContent: React.FC = () => {
     if (ticketId) {
       setHighlightTicketId(ticketId);
     }
-    setCurrentView('dashboard');
+    navigate('dashboard');
   };
 
   // Update document title dynamically
@@ -68,7 +111,7 @@ const MainAppContent: React.FC = () => {
       }
       return;
     }
-    setCurrentView(view);
+    navigate(view);
   };
 
   // Render view content
@@ -77,7 +120,7 @@ const MainAppContent: React.FC = () => {
   if (currentView === 'admin' && isAdmin) {
     viewContent = (
       <div className="min-h-screen bg-slate-950">
-        <AdminPanel onExitToWebsite={() => setCurrentView('home')} />
+        <AdminPanel onExitToWebsite={() => navigate('home')} />
         <AuthModal />
       </div>
     );
@@ -85,15 +128,15 @@ const MainAppContent: React.FC = () => {
     viewContent = (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-slate-950">
         <div>
-          <AnnouncementBar onNavigateToPlans={() => setCurrentView('plans')} />
+          <AnnouncementBar onNavigateToPlans={() => navigate('plans')} />
           <Navbar
             currentView={currentView}
             setCurrentView={handleNavigate}
             onOpenSupportTicket={handleOpenSupportTicket}
           />
           <UserDashboard
-            onBackToStorefront={() => setCurrentView('home')}
-            onExplorePlans={() => setCurrentView('plans')}
+            onBackToStorefront={() => navigate('home')}
+            onExplorePlans={() => navigate('plans')}
             initialTab={dashboardTab}
             highlightTicketId={highlightTicketId}
           />
@@ -106,7 +149,7 @@ const MainAppContent: React.FC = () => {
     viewContent = (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-slate-950">
         <div>
-          <AnnouncementBar onNavigateToPlans={() => setCurrentView('plans')} />
+          <AnnouncementBar onNavigateToPlans={() => navigate('plans')} />
           <Navbar
             currentView={currentView}
             setCurrentView={handleNavigate}
@@ -130,7 +173,7 @@ const MainAppContent: React.FC = () => {
           {/* HOME VIEW */}
           {currentView === 'home' && (
             <main>
-              <Hero onExplorePlans={() => setCurrentView('plans')} />
+              <Hero onExplorePlans={() => navigate('plans')} />
               <HostingPlans />
               <Features />
               <WhyChooseUs />
@@ -144,7 +187,7 @@ const MainAppContent: React.FC = () => {
             <main className="pt-8 pb-16">
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-6">
                 <button
-                  onClick={() => setCurrentView('home')}
+                  onClick={() => navigate('home')}
                   className="text-xs font-semibold text-slate-400 hover:text-emerald-400 transition-colors inline-flex items-center gap-1 mb-4"
                 >
                   ← Return to Overview
