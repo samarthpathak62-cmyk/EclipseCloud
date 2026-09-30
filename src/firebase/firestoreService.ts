@@ -661,17 +661,48 @@ export async function saveRole(role: AdminRoleDefinition, actorEmail = 'Owner'):
 
 // ---------------- NOTIFICATIONS ----------------
 
-export async function fetchNotifications(userId?: string): Promise<AppNotification[]> {
+export async function fetchNotifications(
+  userId?: string,
+  userEmail?: string
+): Promise<AppNotification[]> {
   try {
-    const snap = await getDocs(collection(db, 'notifications'));
-    let notifs = snap.docs.map(d => d.data() as AppNotification);
-    if (userId) {
-      notifs = notifs.filter(n => n.target === 'all' || n.userId === userId);
+    // Admins can read the complete notification history.
+    if (!userId) {
+      const snap = await getDocs(collection(db, 'notifications'));
+      return snap.docs
+        .map(d => d.data() as AppNotification)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
-    return notifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Normal users must NOT read the whole collection. Firestore security rules
+    // reject a collection query when it contains documents the user cannot read.
+    const notificationsRef = collection(db, 'notifications');
+    const queries = [
+      query(notificationsRef, where('target', '==', 'all')),
+      query(notificationsRef, where('targetUserId', '==', userId)),
+      // Backward compatibility with older notification documents.
+      query(notificationsRef, where('userId', '==', userId)),
+    ];
+
+    if (userEmail) {
+      queries.push(query(notificationsRef, where('targetUserEmail', '==', userEmail)));
+    }
+
+    const snapshots = await Promise.all(queries.map(q => getDocs(q)));
+    const notificationMap = new Map<string, AppNotification>();
+
+    snapshots.forEach(snap => {
+      snap.docs.forEach(docSnap => {
+        const notification = docSnap.data() as AppNotification;
+        notificationMap.set(notification.id || docSnap.id, notification);
+      });
+    });
+
+    return Array.from(notificationMap.values())
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (err) {
-    console.warn('Error fetching notifications:', err);
-    return [];
+    console.error('Error fetching notifications:', err);
+    throw err;
   }
 }
 
