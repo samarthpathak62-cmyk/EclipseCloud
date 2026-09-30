@@ -96,7 +96,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     try {
       const [oList, nList, tList] = await Promise.all([
         fetchOrders(user.uid),
-        fetchNotifications(user.uid),
+        fetchNotifications(user.uid, user.email || userProfile?.email),
         fetchTickets(user.uid),
       ]);
       setOrders(oList);
